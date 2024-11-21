@@ -22,7 +22,7 @@ jobs:
 
       - name: Get all changed Dockerfiles
         id: changed-files
-        uses: tj-actions/changed-@v45
+        uses: tj-actions/changed-files@v45
         with:
           files: |
             **/Dockerfile
