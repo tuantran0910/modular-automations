@@ -2,12 +2,6 @@ name: Release Helm Chart
 
 on:
   workflow_call:
-    inputs:
-      charts_dir:
-        description: The directory containing Helm charts to release
-        default: charts
-        required: false
-        type: string
 
 jobs:
   setup:
