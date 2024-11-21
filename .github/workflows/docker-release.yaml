@@ -1,0 +1,117 @@
+name: Release Docker Image
+on:
+  workflow_call:
+    inputs:
+      no_push:
+        description: Do not push the image to the registry
+        default: false
+        required: false
+        type: boolean
+
+jobs:
+  setup:
+    runs-on: self-hosted
+    outputs:
+      changed: ${{ steps.list-changed.outputs.changed }}
+      dockerfile_path: ${{ steps.list-changed.outputs.dockerfile_path }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get all changed Dockerfiles
+        id: changed-files
+        uses: tj-actions/changed-@v45
+        with:
+          files: |
+            **/Dockerfile
+
+      - name: List changed Dockerfiles
+        id: list-changed
+        run: |
+          changed=${{ steps.changed-files.outputs.all_changed_files }}
+          echo "${changed}"
+          num_changed=${{ steps.changed-files.outputs.all_changed_files_count }}
+          if [[ "${num_changed}" -gt "1" ]] ; then
+            echo "More than one Dockerfile changed, exiting"
+            exit 1
+          fi
+          if [[ -n "${changed}" ]]; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "dockerfile_path=${changed}" >> $GITHUB_OUTPUT
+          else
+            echo "No Dockerfiles have changed, skipping release"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+  metadata:
+    runs-on: self-hosted
+    needs: [setup]
+    if: needs.setup.outputs.changed == 'true'
+    outputs:
+      context: ${{ steps.app-meta.outputs.context }}
+      app_name: ${{ steps.app-meta.outputs.app_name }}
+      tags: ${{ steps.docker-meta.outputs.tags }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get App metadata
+        id: app-meta
+        run: |
+          dockerfile_path="${{ needs.setup.outputs.dockerfile_path }}"
+          context=$(dirname ${dockerfile_path})
+          app_name=$(basename ${context})
+
+          echo "context=${context}" >> $GITHUB_OUTPUT
+          echo "app_name=${app_name}" >> $GITHUB_OUTPUT
+
+      - name: Get Docker metadata
+        id: docker-meta
+        uses: docker/metadata-action@v5
+        with:
+          tags: |
+            type=ref,event=tag
+            type=sha,prefix={{branch}}-
+
+  release:
+    runs-on: self-hosted
+    container:
+      image: gcr.io/kaniko-project/executor:latest
+    needs: [metadata]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - run: |
+          if [ "${{ inputs.no_push }}" = "true" ]; then
+            NO_PUSH_FLAG="--no-push"
+          else
+            NO_PUSH_FLAG=""
+          fi
+          echo "NO_PUSH_FLAG=${NO_PUSH_FLAG}" >> $GITHUB_ENV
+
+      - name: Build and Push Image to GHCR with kaniko
+        run: |
+          cat <<EOF > /kaniko/.docker/config.json
+          {
+            "auths": {
+              "ghcr.io": {
+                "auth": "$(echo -n "$GIT_USERNAME:$GIT_PASSWORD" | base64 -w0)"
+              }
+            }
+          }
+          EOF
+
+          /kaniko/executor --dockerfile="./app/Dockerfile" \
+            --context="${{ github.repositoryUrl }}#${{ github.ref }}#${{ github.sha }}"  \
+            --context-sub-path="${{ needs.metadata.outputs.context }}" \
+            --dockerfile="./Dockerfile" \
+            --destination="ghcr.io/thealtoclef/${{ needs.metadata.outputs.app_name }}:${{ needs.metadata.outputs.tags }}" \
+            --cache=true --cache-copy-layers=true --cache-ttl=24h \
+            --push-retry 5 \
+            ${{ env.NO_PUSH_FLAG }}
+        env:
+          GIT_USERNAME: ${{ github.actor }}
+          GIT_PASSWORD: ${{ github.token }}
