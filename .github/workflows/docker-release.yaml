@@ -105,7 +105,7 @@ jobs:
           EOF
 
           /kaniko/executor \
-            --context="${{ github.repositoryUrl }}#${{ github.ref }}#${{ github.sha }}"  \
+            --context="${{ github.repositoryUrl }}#${{ github.ref }}#${{ github.sha }}" \
             --context-sub-path="${{ needs.metadata.outputs.context }}" \
             --dockerfile="Dockerfile" \
             --destination="ghcr.io/thealtoclef/${{ needs.metadata.outputs.app_name }}:${{ needs.metadata.outputs.tags }}" \
