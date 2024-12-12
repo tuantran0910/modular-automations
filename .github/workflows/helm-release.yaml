@@ -2,6 +2,12 @@ name: Release Helm Chart
 
 on:
   workflow_call:
+    inputs:
+      chart_dirs:
+        description: "The directories containing Helm charts to release"
+        default: "charts"
+        required: false
+        type: string
 
 jobs:
   setup:
@@ -35,8 +41,7 @@ jobs:
         run: |
           latest_tag=$( if ! git describe --tags --abbrev=0 2> /dev/null ; then git rev-list --max-parents=0 --first-parent HEAD ; fi )
 
-          echo "Running: ct list-changed --since ${latest_tag}"
-          changed=$(ct list-changed --since "${latest_tag}")
+          changed=$(ct list-changed --chart-dirs "{{ inputs.chart_dirs }}" --since "${latest_tag}" --target-branch "${{ github.ref_name }}")
           echo "${changed}"
           num_changed=$(wc -l <<< ${changed})
           if [[ "${num_changed}" -gt "1" ]] ; then
