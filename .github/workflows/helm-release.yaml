@@ -41,7 +41,7 @@ jobs:
         run: |
           latest_tag=$( if ! git describe --tags --abbrev=0 2> /dev/null ; then git rev-list --max-parents=0 --first-parent HEAD ; fi )
 
-          changed=$(ct list-changed --chart-dirs "{{ inputs.chart_dirs }}" --since "${latest_tag}" --target-branch "${{ github.ref_name }}")
+          changed=$(ct list-changed --chart-dirs "${{ inputs.chart_dirs }}" --since "${latest_tag}" --target-branch "${{ github.ref_name }}")
           echo "${changed}"
           num_changed=$(wc -l <<< ${changed})
           if [[ "${num_changed}" -gt "1" ]] ; then
