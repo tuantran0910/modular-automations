@@ -35,8 +35,8 @@ jobs:
         run: |
           latest_tag=$( if ! git describe --tags --abbrev=0 2> /dev/null ; then git rev-list --max-parents=0 --first-parent HEAD ; fi )
 
-          echo "Running: ct list-changed --since ${latest_tag} --target-branch ${{ github.ref_name }}"
-          changed=$(ct list-changed --since "${latest_tag}" --target-branch "${{ github.ref_name }}")
+          echo "Running: ct list-changed --since ${latest_tag}"
+          changed=$(ct list-changed --since "${latest_tag}")
           echo "${changed}"
           num_changed=$(wc -l <<< ${changed})
           if [[ "${num_changed}" -gt "1" ]] ; then
