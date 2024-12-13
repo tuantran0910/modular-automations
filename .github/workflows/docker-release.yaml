@@ -92,6 +92,7 @@ jobs:
     container:
       image: gcr.io/kaniko-project/executor:debug
     needs: [metadata]
+    if: always() && (needs.metadata.result == 'success')
     permissions:
       contents: read
       packages: write
