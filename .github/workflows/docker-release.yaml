@@ -81,6 +81,7 @@ jobs:
         id: docker-meta
         uses: docker/metadata-action@v5
         with:
+          sep-tags: " "
           tags: |
             type=schedule
             type=semver,pattern={{version}}
@@ -104,7 +105,7 @@ jobs:
 
           DESTINATIONS=""
           for tag in ${{ needs.metadata.outputs.tags }}; do
-          DESTINATIONS="$DESTINATIONS --destination=ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}:${tag}"
+            DESTINATIONS="$DESTINATIONS --destination=ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}:${tag}"
           done
           echo "DESTINATIONS=$DESTINATIONS" >> $GITHUB_ENV
 
