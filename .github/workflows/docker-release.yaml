@@ -71,9 +71,8 @@ jobs:
       - name: Get App metadata
         id: app-meta
         run: |
-          dockerfile_path="${{ needs.setup.outputs.dockerfile_path || inputs.dockerfile_path }}"
-          context=$(dirname ${dockerfile_path})
-          app_name=$(basename ${context})
+          context=$(dirname ${{ needs.setup.outputs.dockerfile_path || inputs.dockerfile_path }})
+          app_name=$(if [ "${{ inputs.is_monorepo }}" == "true" ]; then basename ${context}; else echo "${{ github.event.repository.name }}"; fi)
 
           echo "context=${context}" >> $GITHUB_OUTPUT
           echo "app_name=${app_name}" >> $GITHUB_OUTPUT
@@ -97,13 +96,8 @@ jobs:
       contents: read
       packages: write
     steps:
-      - run: |
-          if [ "${{ inputs.no_push }}" = "true" ]; then
-            NO_PUSH_FLAG="--no-push"
-          else
-            NO_PUSH_FLAG=""
-          fi
-          echo "NO_PUSH_FLAG=${NO_PUSH_FLAG}" >> $GITHUB_ENV
+      - name: Setup environment variables
+        run: if [ "${{ inputs.no_push }}" = "true" ]; then echo "NO_PUSH_FLAG=--no-push" >> $GITHUB_ENV; fi
 
       - name: Build and Push Image to GHCR with kaniko
         run: |
@@ -121,7 +115,10 @@ jobs:
             --context="${{ github.repositoryUrl }}#${{ github.ref }}#${{ github.sha }}" \
             --context-sub-path="${{ needs.metadata.outputs.context }}" \
             --dockerfile="Dockerfile" \
-            --destination="ghcr.io/thealtoclef/${{ needs.metadata.outputs.app_name }}:${{ needs.metadata.outputs.tags }}" \
+            {% for tag in needs.metadata.outputs.tags %}
+            --destination="ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}:${{ tag }}" \
+            {% endfor %}
+            --cache-repo="ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}/cache" \
             --cache=true --cache-copy-layers=true --cache-ttl=24h \
             --push-retry 5 \
             ${{ env.NO_PUSH_FLAG }}
