@@ -71,7 +71,7 @@ jobs:
       - name: Get App metadata
         id: app-meta
         run: |
-          dockerfile_path="${{ needs.setup.outputs.dockerfile_path | default(inputs.dockerfile_path) }}"
+          dockerfile_path="${{ needs.setup.outputs.dockerfile_path || inputs.dockerfile_path }}"
           context=$(dirname ${dockerfile_path})
           app_name=$(basename ${context})
 
