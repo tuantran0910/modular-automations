@@ -7,10 +7,21 @@ on:
         default: false
         required: false
         type: boolean
+      is_monorepo:
+        description: Whether the repository is a monorepo
+        default: false
+        required: false
+        type: boolean
+      dockerfile_path:
+        description: The path to the Dockerfile to build
+        default: "Dockerfile"
+        required: false
+        type: string
 
 jobs:
   setup:
     runs-on: self-hosted
+    if: ${{ inputs.is_monorepo == true }}
     outputs:
       changed: ${{ steps.list-changed.outputs.changed }}
       dockerfile_path: ${{ steps.list-changed.outputs.dockerfile_path }}
@@ -48,7 +59,7 @@ jobs:
   metadata:
     runs-on: self-hosted
     needs: [setup]
-    if: needs.setup.outputs.changed == 'true'
+    if: always() && (needs.setup.result == 'success' && needs.setup.outputs.changed == 'true') || (needs.setup.result == 'skipped')
     outputs:
       context: ${{ steps.app-meta.outputs.context }}
       app_name: ${{ steps.app-meta.outputs.app_name }}
@@ -60,7 +71,7 @@ jobs:
       - name: Get App metadata
         id: app-meta
         run: |
-          dockerfile_path="${{ needs.setup.outputs.dockerfile_path }}"
+          dockerfile_path="${{ needs.setup.outputs.dockerfile_path | default(inputs.dockerfile_path) }}"
           context=$(dirname ${dockerfile_path})
           app_name=$(basename ${context})
 
@@ -72,8 +83,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           tags: |
-            type=ref,event=tag
-            type=sha,prefix={{branch}}-
+            type=schedule
+            type=semver,pattern={{version}}
+            type=sha
 
   release:
     runs-on: self-hosted
