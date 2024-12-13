@@ -100,12 +100,16 @@ jobs:
       - name: Setup environment variables
         run: |
           if [ "${{ inputs.no_push }}" = "true" ]; then
-            echo "NO_PUSH_FLAG=--no-push" >> $GITHUB_ENV
+            echo "KANIKO_NO_PUSH=true" >> $GITHUB_ENV
           fi
 
           DESTINATIONS=""
           for tag in ${{ needs.metadata.outputs.tags }}; do
-            DESTINATIONS="$DESTINATIONS --destination=ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}:${tag}"
+            if [ -z "$DESTINATIONS" ]; then
+              DESTINATIONS="--destination=ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}:${tag}"
+            else
+              DESTINATIONS="$DESTINATIONS --destination=ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}:${tag}"
+            fi
           done
           echo "DESTINATIONS=$DESTINATIONS" >> $GITHUB_ENV
 
@@ -126,10 +130,9 @@ jobs:
             --context-sub-path="${{ needs.metadata.outputs.context }}" \
             --dockerfile="Dockerfile" \
             ${{ env.DESTINATIONS }} \
-            --cache-repo="ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}/cache" \
             --cache=true --cache-copy-layers=true --cache-ttl=24h \
-            --push-retry 5 \
-            ${{ env.NO_PUSH_FLAG }}
+            --cache-repo="ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}/cache" \
+            --push-retry 5
         env:
           GIT_USERNAME: ${{ github.actor }}
           GIT_PASSWORD: ${{ github.token }}
