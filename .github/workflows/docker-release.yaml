@@ -120,7 +120,7 @@ jobs:
 
           CACHE_OPTIONS=
           if [ "${{ inputs.cache }}" = "true" ]; then
-            CACHE_OPTIONS=--cache=true --cache-ttl=24h --cache-repo=ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}/cache"
+            CACHE_OPTIONS="--cache=true --cache-ttl=24h --cache-repo=ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}/cache"
           fi
           echo "CACHE_OPTIONS=$CACHE_OPTIONS" >> $GITHUB_ENV
 
