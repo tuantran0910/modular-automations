@@ -155,7 +155,7 @@ jobs:
           EOF
           echo "BUILD_ARGS=$BUILD_ARGS" >> $GITHUB_ENV
 
-      - name: Build and Push Image to GHCR with kaniko
+      - name: Build and push to GHCR with kaniko
         run: |
           cat <<EOF > /kaniko/.docker/config.json
           {
@@ -171,11 +171,10 @@ jobs:
             --context="${{ github.repositoryUrl }}#${{ github.ref }}#${{ github.sha }}" \
             --context-sub-path="${{ needs.setup.outputs.context_dir }}" \
             --dockerfile="${{ needs.setup.outputs.dockerfile_path }}" \
-            ${{ env.DESTINATIONS }} \
             ${{ env.BUILD_ARGS }} \
-            --push-retry 5 \
             --cache=true --cache-repo=ghcr.io/${{ needs.setup.outputs.image_name }}/cache \
-            --use-new-run
+            ${{ env.DESTINATIONS }} \
+            --push-retry 5 --use-new-run
         env:
           GIT_USERNAME: ${{ github.actor }}
           GIT_PASSWORD: ${{ github.token }}
@@ -188,20 +187,25 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build and Push Image to GHCR
-        uses: cloudposse/github-action-docker-build-push@main
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          login: ${{ github.actor }}
+          username: ${{ github.actor }}
           password: ${{ github.token }}
-          organization: ${{ github.event.repository.owner.login }}
-          repository: ${{ github.event.repository.name }}
-          image_name: ${{ needs.setup.outputs.image_name }}
-          cache-from: "type=registry,ref=ghcr.io/${{ needs.setup.outputs.image_name }}:cache"
-          cache-to: "mode=max,image-manifest=true,oci-mediatypes=true,type=registry,ref=ghcr.io/${{ needs.setup.outputs.image_name }}:cache"
-          workdir: ${{ needs.setup.outputs.context_dir }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: remote
+          endpoint: tcp://buildkit-buildkit-service:1234
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: "{{defaultContext}}:${{ needs.setup.outputs.context_dir }}"
           file: ${{ needs.setup.outputs.dockerfile_path }}
           build-args: ${{ inputs.build_args }}
+          cache-from: "type=gha"
+          cache-to: "mode=max,image-manifest=true,oci-mediatypes=true,type=gha"
+          tags: ${{ needs.setup.outputs.destinations }}
