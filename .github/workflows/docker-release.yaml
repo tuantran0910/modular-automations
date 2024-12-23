@@ -2,8 +2,13 @@ name: Release Docker Image
 on:
   workflow_call:
     inputs:
-      no_push:
-        description: Do not push the image to the registry
+      runs_on:
+        description: The runner to use for the job
+        default: "self-hosted"
+        required: false
+        type: string
+      dind:
+        description: Whether to use Docker-in-Docker
         default: false
         required: false
         type: boolean
@@ -12,24 +17,30 @@ on:
         default: false
         required: false
         type: boolean
+      context_dir:
+        description: The context directory to build the Docker image in
+        default: "."
+        required: false
+        type: string
       dockerfile_path:
-        description: The path to the Dockerfile to build
+        description: The path to the Dockerfile to build, relative to the context directory
         default: "Dockerfile"
         required: false
         type: string
-      cache:
-        description: Whether to use kaniko cache
-        default: false
+      build_args:
+        description: Build arguments to pass to the Docker build
+        default: ""
         required: false
-        type: boolean
+        type: string
 
 jobs:
   setup:
-    runs-on: self-hosted
-    if: ${{ inputs.is_monorepo == true }}
+    runs-on: ${{ inputs.runs_on }}
     outputs:
-      changed: ${{ steps.list-changed.outputs.changed }}
-      dockerfile_path: ${{ steps.list-changed.outputs.dockerfile_path }}
+      context_dir: ${{ steps.app-meta.outputs.context_dir }}
+      dockerfile_path: ${{ steps.app-meta.outputs.dockerfile_path }}
+      image_name: ${{ steps.app-meta.outputs.image_name }}
+      destinations: ${{ steps.docker-meta.outputs.tags }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,6 +49,7 @@ jobs:
 
       - name: Get all changed Dockerfiles
         id: changed-files
+        if: ${{ inputs.is_monorepo == true }}
         uses: tj-actions/changed-files@v45
         with:
           files: |
@@ -45,84 +57,103 @@ jobs:
 
       - name: List changed Dockerfiles
         id: list-changed
+        if: ${{ inputs.is_monorepo == true }}
         run: |
-          changed=${{ steps.changed-files.outputs.all_changed_files }}
-          echo "${changed}"
+          changed_files=${{ steps.changed-files.outputs.all_changed_files }}
+          echo $changed_files
+          echo "changed_files=$changed_files" >> $GITHUB_OUTPUT
+
           num_changed=${{ steps.changed-files.outputs.all_changed_files_count }}
-          if [[ "${num_changed}" -gt "1" ]]; then
+          if [[ "$num_changed" -gt "1" ]]; then
             echo "More than one Dockerfile changed, exiting"
             exit 1
-          fi
-          if [[ -n "${changed}" ]]; then
-              echo "changed=true" >> $GITHUB_OUTPUT
-              echo "dockerfile_path=${changed}" >> $GITHUB_OUTPUT
+          elif [[ "$num_changed" -eq "1" ]]; then
+            echo "One Dockerfile changed"
           else
-            echo "No Dockerfiles have changed, skipping release"
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No Dockerfiles have changed, exiting"
+            exit 1
           fi
-
-  metadata:
-    runs-on: self-hosted
-    needs: [setup]
-    if: always() && (needs.setup.result == 'success' && needs.setup.outputs.changed == 'true') || (needs.setup.result == 'skipped')
-    outputs:
-      context: ${{ steps.app-meta.outputs.context }}
-      app_name: ${{ steps.app-meta.outputs.app_name }}
-      tags: ${{ steps.docker-meta.outputs.tags }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
       - name: Get App metadata
         id: app-meta
         run: |
-          context=$(dirname ${{ needs.setup.outputs.dockerfile_path || inputs.dockerfile_path }})
-          app_name=$(if [ "${{ inputs.is_monorepo }}" == "true" ]; then basename ${context}; else echo "${{ github.event.repository.name }}"; fi)
+          if [ "${{ inputs.is_monorepo }}" == "true" ]; then
+            changed_files=${{ steps.list-changed.outputs.changed_files }}
+            context_dir=$(dirname $changed_files)
+            dockerfile_path=$(realpath --relative-to=$context_dir $changed_files)
+            app_name=$(basename $context_dir)
+          else
+            context_dir=${{ inputs.context_dir }}
+            dockerfile_path=${{ inputs.dockerfile_path }}
+            app_name=${{ github.event.repository.name }}
+          fi
 
-          echo "context=${context}" >> $GITHUB_OUTPUT
-          echo "app_name=${app_name}" >> $GITHUB_OUTPUT
+          echo "context_dir=$context_dir" >> $GITHUB_OUTPUT
+          echo "dockerfile_path=$dockerfile_path" >> $GITHUB_OUTPUT
+
+          image_name=${{ github.event.repository.owner.login }}/$app_name
+          echo "image_name=$image_name" >> $GITHUB_OUTPUT
 
       - name: Get Docker metadata
         id: docker-meta
+        if: ${{ inputs.dind == false }}
         uses: docker/metadata-action@v5
         with:
-          sep-tags: " "
+          images: ghcr.io/${{ steps.app-meta.outputs.image_name }}
           tags: |
-            type=schedule
-            type=semver,pattern={{version}}
-            type=sha
+            type=sha,format=long,priority=1001,prefix=sha-,enable=true
+            type=schedule,pattern=nightly,enable=true,priority=1000
+            type=semver,pattern={{version}},value=,enable=true,priority=900
+            type=semver,pattern={{major}}.{{minor}},value=,enable=true,priority=900
+            type=semver,pattern={{major}},value=,enable=true,priority=900
+            type=ref,event=branch,enable=true,priority=600
+            type=ref,event=pr,prefix=pr-,enable=true,priority=600
+            type=raw,value=latest,enable={{is_default_branch}},priority=200
+            type=sha,prefix=sha-,format=short,enable=true,priority=100
 
   release:
-    runs-on: self-hosted
+    if: ${{ inputs.dind == false }}
+    runs-on: ${{ inputs.runs_on }}
     container:
       image: gcr.io/kaniko-project/executor:debug
-    needs: [metadata]
-    if: always() && (needs.metadata.result == 'success')
+    needs: [setup]
     permissions:
       contents: read
       packages: write
     steps:
       - name: Setup environment variables
         run: |
-          if [ "${{ inputs.no_push }}" = "true" ]; then
-            echo "KANIKO_NO_PUSH=true" >> $GITHUB_ENV
-          fi
-
           DESTINATIONS=""
-          for tag in ${{ needs.metadata.outputs.tags }}; do
-            if [ -z "$DESTINATIONS" ]; then
-              DESTINATIONS="--destination=ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}:${tag}"
-            else
-              DESTINATIONS="$DESTINATIONS --destination=ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}:${tag}"
-            fi
-          done
+          while IFS= read -r destination; do
+              destination=$(echo "$destination" | xargs)
+              if [ -z "$destination" ]; then
+                  continue
+              fi
+              if [ -z "$DESTINATIONS" ]; then
+                  DESTINATIONS="--destination=$destination"
+              else
+                  DESTINATIONS="$DESTINATIONS --destination=$destination"
+              fi
+          done <<EOF
+          ${{ needs.setup.outputs.destinations }}
+          EOF
           echo "DESTINATIONS=$DESTINATIONS" >> $GITHUB_ENV
 
-          CACHE_OPTIONS=
-          if [ "${{ inputs.cache }}" = "true" ]; then
-            CACHE_OPTIONS="--cache=true --cache-ttl=24h --cache-repo=ghcr.io/${{ github.repository_owner }}/${{ needs.metadata.outputs.app_name }}/cache"
-          fi
-          echo "CACHE_OPTIONS=$CACHE_OPTIONS" >> $GITHUB_ENV
+          BUILD_ARGS=""
+          while IFS= read -r arg; do
+              arg=$(echo "$arg" | xargs)
+              if [ -z "$arg" ]; then
+                  continue
+              fi
+              if [ -z "$BUILD_ARGS" ]; then
+                  BUILD_ARGS="--build-arg=$arg"
+              else
+                  BUILD_ARGS="$BUILD_ARGS --build-arg=$arg"
+              fi
+          done <<EOF
+          ${{ inputs.build_args }}
+          EOF
+          echo "BUILD_ARGS=$BUILD_ARGS" >> $GITHUB_ENV
 
       - name: Build and Push Image to GHCR with kaniko
         run: |
@@ -138,11 +169,39 @@ jobs:
 
           /kaniko/executor \
             --context="${{ github.repositoryUrl }}#${{ github.ref }}#${{ github.sha }}" \
-            --context-sub-path="${{ needs.metadata.outputs.context }}" \
-            --dockerfile="Dockerfile" \
+            --context-sub-path="${{ needs.setup.outputs.context_dir }}" \
+            --dockerfile="${{ needs.setup.outputs.dockerfile_path }}" \
             ${{ env.DESTINATIONS }} \
+            ${{ env.BUILD_ARGS }} \
             --push-retry 5 \
-            ${{ env.CACHE_OPTIONS }}
+            --cache=true --cache-repo=ghcr.io/${{ needs.setup.outputs.image_name }}/cache \
+            --use-new-run
         env:
           GIT_USERNAME: ${{ github.actor }}
           GIT_PASSWORD: ${{ github.token }}
+
+  release-dind:
+    if: ${{ inputs.dind == true }}
+    runs-on: ${{ inputs.runs_on }}
+    needs: [setup]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and Push Image to GHCR
+        uses: cloudposse/github-action-docker-build-push@main
+        with:
+          registry: ghcr.io
+          login: ${{ github.actor }}
+          password: ${{ github.token }}
+          organization: ${{ github.event.repository.owner.login }}
+          repository: ${{ github.event.repository.name }}
+          image_name: ${{ needs.setup.outputs.image_name }}
+          cache-from: "type=registry,ref=ghcr.io/${{ needs.setup.outputs.image_name }}:cache"
+          cache-to: "mode=max,image-manifest=true,oci-mediatypes=true,type=registry,ref=ghcr.io/${{ needs.setup.outputs.image_name }}:cache"
+          workdir: ${{ needs.setup.outputs.context_dir }}
+          file: ${{ needs.setup.outputs.dockerfile_path }}
+          build-args: ${{ inputs.build_args }}

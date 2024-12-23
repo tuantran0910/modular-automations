@@ -3,6 +3,11 @@ name: Release Helm Chart
 on:
   workflow_call:
     inputs:
+      runs_on:
+        description: The runner to use for the job
+        default: "self-hosted"
+        required: false
+        type: string
       chart_dirs:
         description: "The directories containing Helm charts to release"
         default: "charts"
@@ -11,7 +16,7 @@ on:
 
 jobs:
   setup:
-    runs-on: self-hosted
+    runs-on: ${{ inputs.runs_on }}
     outputs:
       changed: ${{ steps.list-changed.outputs.changed }}
       chart_path: ${{ steps.list-changed.outputs.chart_path }}
@@ -67,7 +72,7 @@ jobs:
           fi
 
   release:
-    runs-on: self-hosted
+    runs-on: ${{ inputs.runs_on }}
     needs: [setup]
     permissions:
       contents: write
