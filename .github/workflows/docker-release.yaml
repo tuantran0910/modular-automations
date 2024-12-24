@@ -203,6 +203,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
+          push: ${{ github.event_name != 'pull_request' }}
           context: "{{defaultContext}}:${{ needs.setup.outputs.context_dir }}"
           file: ${{ needs.setup.outputs.dockerfile_path }}
           build-args: ${{ inputs.build_args }}
