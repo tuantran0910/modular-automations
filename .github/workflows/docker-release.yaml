@@ -96,7 +96,6 @@ jobs:
 
       - name: Get Docker metadata
         id: docker-meta
-        if: ${{ inputs.dind == false }}
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ steps.app-meta.outputs.image_name }}
