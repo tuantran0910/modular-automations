@@ -32,6 +32,11 @@ on:
         default: ""
         required: false
         type: string
+      platforms:
+        description: Platforms to build the Docker image for
+        default: "linux/amd64"
+        required: false
+        type: string
 
 jobs:
   setup:
@@ -206,3 +211,4 @@ jobs:
           cache-from: "type=gha"
           cache-to: "mode=max,image-manifest=true,oci-mediatypes=true,type=gha"
           tags: ${{ needs.setup.outputs.destinations }}
+          platforms: ${{ inputs.platforms }}
