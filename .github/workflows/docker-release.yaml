@@ -12,6 +12,11 @@ on:
         default: false
         required: false
         type: boolean
+      dind_platforms:
+        description: The platforms to build for when using Docker-in-Docker
+        default: "linux/amd64"
+        required: false
+        type: string
       is_monorepo:
         description: Whether the repository is a monorepo
         default: false
@@ -30,11 +35,6 @@ on:
       build_args:
         description: Build arguments to pass to the Docker build
         default: ""
-        required: false
-        type: string
-      platforms:
-        description: Platforms to build the Docker image for
-        default: "linux/amd64"
         required: false
         type: string
 
@@ -214,4 +214,4 @@ jobs:
           cache-from: "type=gha"
           cache-to: "mode=max,image-manifest=true,oci-mediatypes=true,type=gha"
           tags: ${{ needs.setup.outputs.destinations }}
-          platforms: ${{ inputs.platforms }}
+          platforms: ${{ inputs.dind_platforms }}
