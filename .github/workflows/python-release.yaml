@@ -56,7 +56,7 @@ jobs:
         uses: alepee/calendar-version-action@v1
         with:
           dateFormat: "YYYY0M.DD"
-          format: "%NOW%.${{ prerelease && '0rc' || '' }}%MICRO%"
+          format: "%NOW%.${{ inputs.prerelease && '0rc' || '' }}%MICRO%"
 
       - name: Git tag
         run: git tag ${{ steps.calver.outputs.version }}
