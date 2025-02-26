@@ -26,12 +26,11 @@ on:
         description: The URL of the registry to publish the package to
         type: string
         required: false
-        default: ""
+        default: https://upload.pypi.org/legacy/
       publish_username:
         description: The username to use when publishing the package
         type: string
         required: false
-        default: ""
 
 jobs:
   release:
