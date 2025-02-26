@@ -22,19 +22,11 @@ on:
         type: boolean
         required: false
         default: false
-      publish_url:
-        description: The URL of the registry to publish the package to
-        type: string
-        required: false
-        default: https://upload.pypi.org/legacy/
-      publish_username:
-        description: The username to use when publishing the package
-        type: string
-        required: false
 
 jobs:
   release:
     runs-on: ${{ inputs.runs_on }}
+    environment: pypi
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -78,9 +70,6 @@ jobs:
       - name: Publish package to registry
         if: ${{ inputs.publish == true }}
         working-directory: ${{ inputs.relative_dir }}
-        env:
-          UV_PUBLISH_URL: ${{ inputs.publish_url }}
-          UV_PUBLISH_USERNAME: ${{ inputs.publish_username }}
         run: uv publish
 
       - name: Make GitHub release
