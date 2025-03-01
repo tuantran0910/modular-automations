@@ -12,11 +12,6 @@ on:
         default: "linux/amd64"
         required: false
         type: string
-      is_monorepo:
-        description: Whether the repository is a monorepo
-        default: false
-        required: false
-        type: boolean
       context_dir:
         description: The context directory to build the Docker image in
         default: "."
@@ -32,14 +27,19 @@ on:
         default: ""
         required: false
         type: string
+      force_build:
+        description: Force build even if no Dockerfile changes detected
+        default: false
+        required: false
+        type: boolean
 
 jobs:
   setup:
     runs-on: ${{ inputs.runs_on }}
     outputs:
-      context_dir: ${{ steps.app-meta.outputs.context_dir }}
-      dockerfile_path: ${{ steps.app-meta.outputs.dockerfile_path }}
-      image_name: ${{ steps.app-meta.outputs.image_name }}
+      context_dirs: ${{ steps.app-meta.outputs.context_dirs }}
+      dockerfile_paths: ${{ steps.app-meta.outputs.dockerfile_paths }}
+      image_names: ${{ steps.app-meta.outputs.image_names }}
       destinations: ${{ steps.docker-meta.outputs.tags }}
     steps:
       - name: Checkout
@@ -47,58 +47,90 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get all changed Dockerfiles
+      - name: Get all changed version files
         id: changed-files
-        if: ${{ inputs.is_monorepo == true }}
         uses: tj-actions/changed-files@v45
         with:
           files: |
-            **/Dockerfile
-
-      - name: List changed Dockerfiles
-        id: list-changed
-        if: ${{ inputs.is_monorepo == true }}
-        run: |
-          changed_files=${{ steps.changed-files.outputs.all_changed_files }}
-          echo $changed_files
-          echo "changed_files=$changed_files" >> $GITHUB_OUTPUT
-
-          num_changed=${{ steps.changed-files.outputs.all_changed_files_count }}
-          if [[ "$num_changed" -gt "1" ]]; then
-            echo "More than one Dockerfile changed, exiting"
-            exit 1
-          elif [[ "$num_changed" -eq "1" ]]; then
-            echo "One Dockerfile changed"
-          else
-            echo "No Dockerfiles have changed, exiting"
-            exit 1
-          fi
+            **/version.txt
 
       - name: Get App metadata
         id: app-meta
         run: |
-          if [ "${{ inputs.is_monorepo }}" == "true" ]; then
-            changed_files=${{ steps.list-changed.outputs.changed_files }}
-            context_dir=$(dirname $changed_files)
-            dockerfile_path=$(realpath --relative-to=$context_dir $changed_files)
-            app_name=$(basename $context_dir)
+          # Initialize arrays for outputs
+          context_dirs=()
+          dockerfile_paths=()
+          image_names=()
+          versions=()
+          descriptions=()
+
+          if [[ "${{ steps.changed-files.outputs.all_changed_files_count }}" -gt "0" || "${{ inputs.force_build }}" == "true" ]]; then
+            if [[ "${{ steps.changed-files.outputs.all_changed_files_count }}" -gt "0" ]]; then
+              # Process changed version files
+              while IFS= read -r changed_file; do
+                if [[ -n "${changed_file}" ]]; then
+                  context_dir=$(dirname $changed_file)
+                  dockerfile_path="Dockerfile"  # Assuming Dockerfile is in the same directory
+                  
+                  # If version.txt is in root, use repo name as app_name
+                  if [[ "$context_dir" == "." ]]; then
+                    app_name="${{ github.event.repository.name }}"
+                  else
+                    app_name=$(basename $context_dir)
+                  fi
+                  
+                  # Only process if Dockerfile exists
+                  if [[ -f "$context_dir/Dockerfile" ]]; then
+                    # Read version from version.txt
+                    version=$(cat "$changed_file")
+                    tag_name="${app_name}-${version}"
+                    
+                    # Check if tag already exists
+                    if [ $(git tag -l ${tag_name}) ]; then
+                      echo "Tag ${tag_name} already exists, skipping image ${app_name}"
+                      continue
+                    fi
+                    
+                    context_dirs+=("$context_dir")
+                    dockerfile_paths+=("$dockerfile_path")
+                    image_names+=("${{ github.event.repository.owner.login }}/$app_name")
+                    versions+=("$version")
+                    descriptions+=("Docker image for ${app_name} version ${version}")
+                  fi
+                fi
+              done <<< "${{ steps.changed-files.outputs.all_changed_files }}"
+            else
+              # Force build with input parameters
+              context_dirs+=("${{ inputs.context_dir }}")
+              dockerfile_paths+=("${{ inputs.dockerfile_path }}")
+              image_names+=("${{ github.event.repository.owner.login }}/${{ github.event.repository.name }}")
+              versions+=("latest")  # Default to latest for force builds
+              descriptions+=("Docker image for ${{ github.event.repository.name }}")
+            fi
           else
-            context_dir=${{ inputs.context_dir }}
-            dockerfile_path=${{ inputs.dockerfile_path }}
-            app_name=${{ github.event.repository.name }}
+            # No changes and no force build
+            echo "No changes detected and force_build is false"
+            exit 0
           fi
 
-          echo "context_dir=$context_dir" >> $GITHUB_OUTPUT
-          echo "dockerfile_path=$dockerfile_path" >> $GITHUB_OUTPUT
+          # Convert arrays to JSON
+          context_dirs_json=$(printf '%s\n' "${context_dirs[@]}" | jq -R . | jq -s .)
+          dockerfile_paths_json=$(printf '%s\n' "${dockerfile_paths[@]}" | jq -R . | jq -s .)
+          image_names_json=$(printf '%s\n' "${image_names[@]}" | jq -R . | jq -s .)
+          versions_json=$(printf '%s\n' "${versions[@]}" | jq -R . | jq -s .)
+          descriptions_json=$(printf '%s\n' "${descriptions[@]}" | jq -R . | jq -s .)
 
-          image_name=${{ github.event.repository.owner.login }}/$app_name
-          echo "image_name=$image_name" >> $GITHUB_OUTPUT
+          echo "context_dirs=${context_dirs_json}" >> $GITHUB_OUTPUT
+          echo "dockerfile_paths=${dockerfile_paths_json}" >> $GITHUB_OUTPUT
+          echo "image_names=${image_names_json}" >> $GITHUB_OUTPUT
+          echo "versions=${versions_json}" >> $GITHUB_OUTPUT
+          echo "descriptions=${descriptions_json}" >> $GITHUB_OUTPUT
 
       - name: Get Docker metadata
         id: docker-meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ steps.app-meta.outputs.image_name }}
+          images: ${{ fromJson(steps.app-meta.outputs.image_names) }}
           tags: |
             type=sha,format=long,priority=1001,prefix=sha-,enable=true
             type=schedule,pattern=nightly,enable=true,priority=1000
@@ -116,6 +148,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      matrix:
+        index: ${{ fromJson(format('[{0}]', join(range(fromJson(needs.setup.outputs.context_dirs) | length), ','))) }}
     steps:
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -134,10 +169,19 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: ${{ github.event_name != 'pull_request' }}
-          context: "{{defaultContext}}:${{ needs.setup.outputs.context_dir }}"
-          file: ${{ needs.setup.outputs.dockerfile_path }}
+          context: "{{defaultContext}}:${{ fromJson(needs.setup.outputs.context_dirs)[matrix.index] }}"
+          file: ${{ fromJson(needs.setup.outputs.dockerfile_paths)[matrix.index] }}
           build-args: ${{ inputs.build_args }}
-          cache-from: "type=registry,ref=ghcr.io/${{ needs.setup.outputs.image_name }}:cache"
-          cache-to: "mode=max,image-manifest=true,oci-mediatypes=true,type=registry,ref=ghcr.io/${{ needs.setup.outputs.image_name }}:cache"
+          cache-from: "type=registry,ref=ghcr.io/${{ fromJson(needs.setup.outputs.image_names)[matrix.index] }}:cache"
+          cache-to: "mode=max,image-manifest=true,oci-mediatypes=true,type=registry,ref=ghcr.io/${{ fromJson(needs.setup.outputs.image_names)[matrix.index] }}:cache"
           tags: ${{ needs.setup.outputs.destinations }}
           platforms: ${{ inputs.platforms }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2.1.0
+        with:
+          tag_name: ${{ fromJson(needs.setup.outputs.image_names)[matrix.index] }}-${{ fromJson(needs.setup.outputs.versions)[matrix.index] }}
+          body: |
+            ${{ fromJson(needs.setup.outputs.descriptions)[matrix.index] }}
+
+            Source commit: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
