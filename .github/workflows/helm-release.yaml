@@ -19,7 +19,7 @@ jobs:
     runs-on: ${{ inputs.runs_on }}
     outputs:
       changed: ${{ steps.list-changed.outputs.changed }}
-      chart_path: ${{ steps.list-changed.outputs.chart_path }}
+      chart_paths: ${{ steps.list-changed.outputs.chart_paths }}
     steps:
       - name: Setup Kube tools
         uses: yokawasa/action-setup-kube-tools@v0.11.2
@@ -73,8 +73,8 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             echo "changed=true" >> $GITHUB_OUTPUT
-            # Convert array to JSON string using a more reliable method
-            json_array=$(printf '%s\n' "${charts_to_release[@]}" | jq -R . | jq -c '[inputs]')
+            # Create a properly escaped JSON array
+            json_array=$(printf '%s\n' "${charts_to_release[@]}" | jq -R . | jq -sc .)
             echo "chart_paths=${json_array}" >> $GITHUB_OUTPUT
           fi
 
@@ -87,7 +87,7 @@ jobs:
     if: needs.setup.outputs.changed == 'true'
     strategy:
       matrix:
-        chart_path: ${{ fromJson(needs.setup.outputs.chart_paths) }}
+        chart_path: ${{ fromJSON(needs.setup.outputs.chart_paths) }}
     steps:
       - name: Setup Kube tools
         uses: yokawasa/action-setup-kube-tools@v0.11.2
