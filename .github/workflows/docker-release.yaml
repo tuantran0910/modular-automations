@@ -58,11 +58,11 @@ jobs:
         id: app-meta
         run: |
           # Initialize arrays for outputs
-          context_dirs=()
-          dockerfile_paths=()
-          image_names=()
-          versions=()
-          descriptions=()
+          declare -a context_dirs
+          declare -a dockerfile_paths
+          declare -a image_names
+          declare -a versions
+          declare -a descriptions
 
           if [[ "${{ steps.changed-files.outputs.all_changed_files_count }}" -gt "0" || "${{ inputs.force_build }}" == "true" ]]; then
             if [[ "${{ steps.changed-files.outputs.all_changed_files_count }}" -gt "0" ]]; then
@@ -113,18 +113,31 @@ jobs:
             exit 0
           fi
 
-          # Convert arrays to JSON
-          context_dirs_json=$(printf '%s\n' "${context_dirs[@]}" | jq -R . | jq -s .)
-          dockerfile_paths_json=$(printf '%s\n' "${dockerfile_paths[@]}" | jq -R . | jq -s .)
-          image_names_json=$(printf '%s\n' "${image_names[@]}" | jq -R . | jq -s .)
-          versions_json=$(printf '%s\n' "${versions[@]}" | jq -R . | jq -s .)
-          descriptions_json=$(printf '%s\n' "${descriptions[@]}" | jq -R . | jq -s .)
+          # Convert arrays to JSON and properly escape for GITHUB_OUTPUT
+          context_dirs_json=$(printf '%s\n' "${context_dirs[@]}" | jq -R . | jq -sc | jq -r tostring)
+          dockerfile_paths_json=$(printf '%s\n' "${dockerfile_paths[@]}" | jq -R . | jq -sc | jq -r tostring)
+          image_names_json=$(printf '%s\n' "${image_names[@]}" | jq -R . | jq -sc | jq -r tostring)
+          versions_json=$(printf '%s\n' "${versions[@]}" | jq -R . | jq -sc | jq -r tostring)
+          descriptions_json=$(printf '%s\n' "${descriptions[@]}" | jq -R . | jq -sc | jq -r tostring)
 
-          echo "context_dirs=${context_dirs_json}" >> $GITHUB_OUTPUT
-          echo "dockerfile_paths=${dockerfile_paths_json}" >> $GITHUB_OUTPUT
-          echo "image_names=${image_names_json}" >> $GITHUB_OUTPUT
-          echo "versions=${versions_json}" >> $GITHUB_OUTPUT
-          echo "descriptions=${descriptions_json}" >> $GITHUB_OUTPUT
+          # Write to GITHUB_OUTPUT with proper delimiter
+          {
+            echo "context_dirs<<EOF"
+            echo "$context_dirs_json"
+            echo "EOF"
+            echo "dockerfile_paths<<EOF"
+            echo "$dockerfile_paths_json"
+            echo "EOF"
+            echo "image_names<<EOF"
+            echo "$image_names_json"
+            echo "EOF"
+            echo "versions<<EOF"
+            echo "$versions_json"
+            echo "EOF"
+            echo "descriptions<<EOF"
+            echo "$descriptions_json"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Get Docker metadata
         id: docker-meta
