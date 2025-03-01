@@ -150,7 +150,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        index: ${{ fromJson(format('[{0}]', join(range(fromJson(needs.setup.outputs.context_dirs) | length), ','))) }}
+        index: ${{ fromJson(needs.setup.outputs.context_dirs) | toJson | fromJson | indices }}
     steps:
       - name: Login to GHCR
         uses: docker/login-action@v3
