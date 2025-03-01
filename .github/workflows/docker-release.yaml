@@ -140,40 +140,19 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-  metadata:
-    needs: [setup]
-    runs-on: ${{ inputs.runs_on }}
-    strategy:
-      matrix:
-        index: ${{ fromJson(needs.setup.outputs.image_names) }}
-    outputs:
-      tags: ${{ steps.docker-meta.outputs.tags }}
-    steps:
-      - name: Get Docker metadata
-        id: docker-meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ matrix.index }}
-          tags: |
-            type=sha,format=long,priority=1001,prefix=sha-,enable=true
-            type=schedule,pattern=nightly,enable=true,priority=1000
-            type=semver,pattern={{version}},value=,enable=true,priority=900
-            type=semver,pattern={{major}}.{{minor}},value=,enable=true,priority=900
-            type=semver,pattern={{major}},value=,enable=true,priority=900
-            type=ref,event=branch,enable=true,priority=600
-            type=ref,event=pr,prefix=pr-,enable=true,priority=600
-            type=raw,value=latest,enable={{is_default_branch}},priority=200
-            type=sha,prefix=sha-,format=short,enable=true,priority=100
-
   release:
-    needs: [setup, metadata]
+    needs: [setup]
     runs-on: ${{ inputs.runs_on }}
     permissions:
       contents: write
       packages: write
     strategy:
       matrix:
-        index: ${{ range(fromJson(needs.setup.outputs.image_names) | length) }}
+        context_dir: ${{ fromJson(needs.setup.outputs.context_dirs) }}
+        dockerfile_path: ${{ fromJson(needs.setup.outputs.dockerfile_paths) }}
+        image_name: ${{ fromJson(needs.setup.outputs.image_names) }}
+        version: ${{ fromJson(needs.setup.outputs.versions) }}
+        description: ${{ fromJson(needs.setup.outputs.descriptions) }}
     steps:
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -188,23 +167,39 @@ jobs:
           driver: ${{ inputs.runs_on != 'ubuntu-latest' && 'remote' || '' }}
           endpoint: ${{ inputs.runs_on != 'ubuntu-latest' && 'tcp://buildkit-buildkit-service:1234' || '' }}
 
+      - name: Get Docker metadata
+        id: docker-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ matrix.image_name }}
+          tags: |
+            type=sha,format=long,priority=1001,prefix=sha-,enable=true
+            type=schedule,pattern=nightly,enable=true,priority=1000
+            type=semver,pattern={{version}},value=,enable=true,priority=900
+            type=semver,pattern={{major}}.{{minor}},value=,enable=true,priority=900
+            type=semver,pattern={{major}},value=,enable=true,priority=900
+            type=ref,event=branch,enable=true,priority=600
+            type=ref,event=pr,prefix=pr-,enable=true,priority=600
+            type=raw,value=latest,enable={{is_default_branch}},priority=200
+            type=sha,prefix=sha-,format=short,enable=true,priority=100
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           push: ${{ github.event_name != 'pull_request' }}
-          context: "{{defaultContext}}:${{ fromJson(needs.setup.outputs.context_dirs)[matrix.index] }}"
-          file: ${{ fromJson(needs.setup.outputs.dockerfile_paths)[matrix.index] }}
+          context: ${{ matrix.context_dir }}
+          file: ${{ matrix.dockerfile_path }}
           build-args: ${{ inputs.build_args }}
-          cache-from: "type=registry,ref=ghcr.io/${{ fromJson(needs.setup.outputs.image_names)[matrix.index] }}:cache"
-          cache-to: "mode=max,image-manifest=true,oci-mediatypes=true,type=registry,ref=ghcr.io/${{ fromJson(needs.setup.outputs.image_names)[matrix.index] }}:cache"
-          tags: ${{ needs.metadata.outputs.tags }}
+          cache-from: "type=registry,ref=ghcr.io/${{ matrix.image_name }}:cache"
+          cache-to: "mode=max,image-manifest=true,oci-mediatypes=true,type=registry,ref=ghcr.io/${{ matrix.image_name }}:cache"
+          tags: ${{ steps.docker-meta.outputs.tags }}
           platforms: ${{ inputs.platforms }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2.1.0
         with:
-          tag_name: ${{ fromJson(needs.setup.outputs.image_names)[matrix.index] }}-${{ fromJson(needs.setup.outputs.versions)[matrix.index] }}
+          tag_name: ${{ matrix.image_name }}-${{ matrix.version }}
           body: |
-            ${{ fromJson(needs.setup.outputs.descriptions)[matrix.index] }}
+            ${{ matrix.description }}
 
             Source commit: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
