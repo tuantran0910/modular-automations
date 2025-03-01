@@ -48,27 +48,34 @@ jobs:
 
           changed=$(ct list-changed --chart-dirs "${{ inputs.chart_dirs }}" --since "${latest_tag}" --target-branch "${{ github.ref_name }}")
           echo "${changed}"
-          num_changed=$(wc -l <<< ${changed})
-          if [[ "${num_changed}" -gt "1" ]] ; then
-            echo "More than one chart changed, exiting"
-            exit 1
-          fi
-          if [[ -n "${changed}" ]]; then
-            name=$(yq ".name" < ${changed}/Chart.yaml)
-            version=$(yq ".version" < ${changed}/Chart.yaml)
-            tag_name="${name}-${version}"
 
-            if [ $(git tag -l ${tag_name}) ]; then
-              echo "Tag ${tag_name} already exists, skipping release"
-              echo "changed=false" >> $GITHUB_OUTPUT
-            else
-              echo "Releasing ${changed}"
-              echo "changed=true" >> $GITHUB_OUTPUT
-              echo "chart_path=${changed}" >> $GITHUB_OUTPUT
+          # Initialize empty arrays for charts to release
+          charts_to_release=()
+
+          # Process each changed chart
+          while IFS= read -r chart_path; do
+            if [[ -n "${chart_path}" ]]; then
+              name=$(yq ".name" < ${chart_path}/Chart.yaml)
+              version=$(yq ".version" < ${chart_path}/Chart.yaml)
+              tag_name="${name}-${version}"
+
+              if [ $(git tag -l ${tag_name}) ]; then
+                echo "Tag ${tag_name} already exists, skipping chart ${name}"
+              else
+                echo "Will release ${chart_path}"
+                charts_to_release+=("${chart_path}")
+              fi
             fi
-          else
-            echo "No charts have changed, skipping release"
+          done <<< "${changed}"
+
+          if [ ${#charts_to_release[@]} -eq 0 ]; then
+            echo "No charts to release"
             echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            # Convert array to JSON string to pass to next job
+            charts_json=$(printf '%s\n' "${charts_to_release[@]}" | jq -R . | jq -s .)
+            echo "chart_paths=${charts_json}" >> $GITHUB_OUTPUT
           fi
 
   release:
@@ -78,6 +85,9 @@ jobs:
       contents: write
       packages: write
     if: needs.setup.outputs.changed == 'true'
+    strategy:
+      matrix:
+        chart_path: ${{ fromJson(needs.setup.outputs.chart_paths) }}
     steps:
       - name: Setup Kube tools
         uses: yokawasa/action-setup-kube-tools@v0.11.2
@@ -92,7 +102,7 @@ jobs:
       - name: Parse Chart.yaml
         id: parse-chart
         run: |
-          chart_path="${{ needs.setup.outputs.chart_path }}"
+          chart_path="${{ matrix.chart_path }}"
           name=$(yq ".name" < ${chart_path}/Chart.yaml)
           version=$(yq ".version" < ${chart_path}/Chart.yaml)
           description=$(yq ".description" < ${chart_path}/Chart.yaml)
