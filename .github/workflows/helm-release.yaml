@@ -49,17 +49,17 @@ jobs:
           changed=$(ct list-changed --chart-dirs "${{ inputs.chart_dirs }}" --since "${latest_tag}" --target-branch "${{ github.ref_name }}")
           echo "${changed}"
 
-          # Initialize empty arrays for charts to release
-          charts_to_release=()
+          # Initialize empty array for charts to release
+          declare -a charts_to_release
 
           # Process each changed chart
           while IFS= read -r chart_path; do
             if [[ -n "${chart_path}" ]]; then
-              name=$(yq ".name" < ${chart_path}/Chart.yaml)
-              version=$(yq ".version" < ${chart_path}/Chart.yaml)
+              name=$(yq ".name" < "${chart_path}/Chart.yaml")
+              version=$(yq ".version" < "${chart_path}/Chart.yaml")
               tag_name="${name}-${version}"
 
-              if [ $(git tag -l ${tag_name}) ]; then
+              if git tag -l "${tag_name}" | grep -q .; then
                 echo "Tag ${tag_name} already exists, skipping chart ${name}"
               else
                 echo "Will release ${chart_path}"
@@ -73,9 +73,9 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             echo "changed=true" >> $GITHUB_OUTPUT
-            # Convert array to JSON string to pass to next job
-            charts_json=$(printf '%s\n' "${charts_to_release[@]}" | jq -R . | jq -s .)
-            echo "chart_paths=${charts_json}" >> $GITHUB_OUTPUT
+            # Convert array to JSON string using a more reliable method
+            json_array=$(printf '%s\n' "${charts_to_release[@]}" | jq -R . | jq -c '[inputs]')
+            echo "chart_paths=${json_array}" >> $GITHUB_OUTPUT
           fi
 
   release:
