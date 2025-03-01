@@ -40,7 +40,8 @@ jobs:
       context_dirs: ${{ steps.app-meta.outputs.context_dirs }}
       dockerfile_paths: ${{ steps.app-meta.outputs.dockerfile_paths }}
       image_names: ${{ steps.app-meta.outputs.image_names }}
-      destinations: ${{ steps.docker-meta.outputs.tags }}
+      versions: ${{ steps.app-meta.outputs.versions }}
+      descriptions: ${{ steps.app-meta.outputs.descriptions }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -104,7 +105,7 @@ jobs:
               context_dirs+=("${{ inputs.context_dir }}")
               dockerfile_paths+=("${{ inputs.dockerfile_path }}")
               image_names+=("${{ github.event.repository.owner.login }}/${{ github.event.repository.name }}")
-              versions+=("latest")  # Default to latest for force builds
+              versions+=("${{ github.ref_name }}")
               descriptions+=("Docker image for ${{ github.event.repository.name }}")
             fi
           else
@@ -139,11 +140,20 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+  metadata:
+    needs: [setup]
+    runs-on: ${{ inputs.runs_on }}
+    strategy:
+      matrix:
+        index: ${{ fromJson(needs.setup.outputs.image_names) }}
+    outputs:
+      tags: ${{ steps.docker-meta.outputs.tags }}
+    steps:
       - name: Get Docker metadata
         id: docker-meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ fromJson(steps.app-meta.outputs.image_names) }}
+          images: ghcr.io/${{ matrix.index }}
           tags: |
             type=sha,format=long,priority=1001,prefix=sha-,enable=true
             type=schedule,pattern=nightly,enable=true,priority=1000
@@ -156,14 +166,14 @@ jobs:
             type=sha,prefix=sha-,format=short,enable=true,priority=100
 
   release:
+    needs: [setup, metadata]
     runs-on: ${{ inputs.runs_on }}
-    needs: [setup]
     permissions:
-      contents: read
+      contents: write
       packages: write
     strategy:
       matrix:
-        index: ${{ fromJson(needs.setup.outputs.context_dirs) }}
+        index: ${{ range(fromJson(needs.setup.outputs.image_names) | length) }}
     steps:
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -187,7 +197,7 @@ jobs:
           build-args: ${{ inputs.build_args }}
           cache-from: "type=registry,ref=ghcr.io/${{ fromJson(needs.setup.outputs.image_names)[matrix.index] }}:cache"
           cache-to: "mode=max,image-manifest=true,oci-mediatypes=true,type=registry,ref=ghcr.io/${{ fromJson(needs.setup.outputs.image_names)[matrix.index] }}:cache"
-          tags: ${{ needs.setup.outputs.destinations }}
+          tags: ${{ needs.metadata.outputs.tags }}
           platforms: ${{ inputs.platforms }}
 
       - name: Create GitHub Release
