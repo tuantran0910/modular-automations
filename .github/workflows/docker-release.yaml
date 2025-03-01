@@ -7,13 +7,8 @@ on:
         default: "self-hosted"
         required: false
         type: string
-      dind:
-        description: Whether to use Docker-in-Docker
-        default: false
-        required: false
-        type: boolean
-      dind_platforms:
-        description: The platforms to build for when using Docker-in-Docker
+      platforms:
+        description: The platforms to build the Docker image for
         default: "linux/amd64"
         required: false
         type: string
@@ -116,75 +111,6 @@ jobs:
             type=sha,prefix=sha-,format=short,enable=true,priority=100
 
   release:
-    if: ${{ inputs.dind == false }}
-    runs-on: ${{ inputs.runs_on }}
-    container:
-      image: gcr.io/kaniko-project/executor:debug
-    needs: [setup]
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Setup environment variables
-        run: |
-          DESTINATIONS=""
-          while IFS= read -r destination; do
-              destination=$(echo "$destination" | xargs)
-              if [ -z "$destination" ]; then
-                  continue
-              fi
-              if [ -z "$DESTINATIONS" ]; then
-                  DESTINATIONS="--destination=$destination"
-              else
-                  DESTINATIONS="$DESTINATIONS --destination=$destination"
-              fi
-          done <<EOF
-          ${{ needs.setup.outputs.destinations }}
-          EOF
-          echo "DESTINATIONS=$DESTINATIONS" >> $GITHUB_ENV
-
-          BUILD_ARGS=""
-          while IFS= read -r arg; do
-              arg=$(echo "$arg" | xargs)
-              if [ -z "$arg" ]; then
-                  continue
-              fi
-              if [ -z "$BUILD_ARGS" ]; then
-                  BUILD_ARGS="--build-arg=$arg"
-              else
-                  BUILD_ARGS="$BUILD_ARGS --build-arg=$arg"
-              fi
-          done <<EOF
-          ${{ inputs.build_args }}
-          EOF
-          echo "BUILD_ARGS=$BUILD_ARGS" >> $GITHUB_ENV
-
-      - name: Build and push to GHCR with kaniko
-        run: |
-          cat <<EOF > /kaniko/.docker/config.json
-          {
-            "auths": {
-              "ghcr.io": {
-                "auth": "$(echo -n "$GIT_USERNAME:$GIT_PASSWORD" | base64 -w0)"
-              }
-            }
-          }
-          EOF
-
-          /kaniko/executor \
-            --context="${{ github.repositoryUrl }}#${{ github.ref }}#${{ github.sha }}" \
-            --context-sub-path="${{ needs.setup.outputs.context_dir }}" \
-            --dockerfile="${{ needs.setup.outputs.dockerfile_path }}" \
-            ${{ env.BUILD_ARGS }} \
-            --cache=true --cache-repo=ghcr.io/${{ needs.setup.outputs.image_name }}/cache \
-            ${{ env.DESTINATIONS }} \
-            --push-retry 5 --use-new-run
-        env:
-          GIT_USERNAME: ${{ github.actor }}
-          GIT_PASSWORD: ${{ github.token }}
-
-  release-dind:
-    if: ${{ inputs.dind == true }}
     runs-on: ${{ inputs.runs_on }}
     needs: [setup]
     permissions:
@@ -214,4 +140,4 @@ jobs:
           cache-from: "type=registry,ref=ghcr.io/${{ needs.setup.outputs.image_name }}:cache"
           cache-to: "mode=max,image-manifest=true,oci-mediatypes=true,type=registry,ref=ghcr.io/${{ needs.setup.outputs.image_name }}:cache"
           tags: ${{ needs.setup.outputs.destinations }}
-          platforms: ${{ inputs.dind_platforms }}
+          platforms: ${{ inputs.platforms }}
