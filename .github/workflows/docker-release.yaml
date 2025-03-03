@@ -173,7 +173,7 @@ jobs:
         with:
           images: ghcr.io/${{ matrix.image_name }}
           tags: |
-            type=raw,value=${{ matrix.version }},priority=0
+            type=raw,value=${{ matrix.version }}
             type=sha
             type=schedule
             type=ref,event=branch
