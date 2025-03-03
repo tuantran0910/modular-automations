@@ -189,6 +189,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2.1.0
         with:
-          tag_name: ${{ matrix.image_name }}-${{ docker-meta.outputs.version }}
+          tag_name: ${{ matrix.image_name }}-${{ steps.docker-meta.outputs.version }}
           body: |
             Source commit: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
