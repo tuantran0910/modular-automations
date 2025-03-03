@@ -41,7 +41,6 @@ jobs:
       dockerfile_paths: ${{ steps.app-meta.outputs.dockerfile_paths }}
       image_names: ${{ steps.app-meta.outputs.image_names }}
       versions: ${{ steps.app-meta.outputs.versions }}
-      descriptions: ${{ steps.app-meta.outputs.descriptions }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,7 +62,6 @@ jobs:
           declare -a dockerfile_paths
           declare -a image_names
           declare -a versions
-          declare -a descriptions
 
           if [[ "${{ steps.changed-files.outputs.all_changed_files_count }}" -gt "0" || "${{ inputs.force_build }}" == "true" ]]; then
             if [[ "${{ steps.changed-files.outputs.all_changed_files_count }}" -gt "0" ]]; then
@@ -96,7 +94,6 @@ jobs:
                     dockerfile_paths+=("$dockerfile_path")
                     image_names+=("${{ github.event.repository.owner.login }}/$app_name")
                     versions+=("$version")
-                    descriptions+=("Docker image for ${app_name} version ${version}")
                   fi
                 fi
               done <<< "${{ steps.changed-files.outputs.all_changed_files }}"
@@ -105,8 +102,7 @@ jobs:
               context_dirs+=("${{ inputs.context_dir }}")
               dockerfile_paths+=("${{ inputs.dockerfile_path }}")
               image_names+=("${{ github.event.repository.owner.login }}/${{ github.event.repository.name }}")
-              versions+=("${{ github.ref_name }}")
-              descriptions+=("Docker image for ${{ github.event.repository.name }}")
+              versions+=("")
             fi
           else
             # No changes and no force build
@@ -119,7 +115,6 @@ jobs:
           dockerfile_paths_json=$(printf '%s\n' "${dockerfile_paths[@]}" | jq -R . | jq -sc | jq -r tostring)
           image_names_json=$(printf '%s\n' "${image_names[@]}" | jq -R . | jq -sc | jq -r tostring)
           versions_json=$(printf '%s\n' "${versions[@]}" | jq -R . | jq -sc | jq -r tostring)
-          descriptions_json=$(printf '%s\n' "${descriptions[@]}" | jq -R . | jq -sc | jq -r tostring)
 
           # Write to GITHUB_OUTPUT with proper delimiter
           {
@@ -135,9 +130,6 @@ jobs:
             echo "versions<<EOF"
             echo "$versions_json"
             echo "EOF"
-            echo "descriptions<<EOF"
-            echo "$descriptions_json"
-            echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
   release:
@@ -152,7 +144,6 @@ jobs:
         dockerfile_path: ${{ fromJson(needs.setup.outputs.dockerfile_paths) }}
         image_name: ${{ fromJson(needs.setup.outputs.image_names) }}
         version: ${{ fromJson(needs.setup.outputs.versions) }}
-        description: ${{ fromJson(needs.setup.outputs.descriptions) }}
     steps:
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -173,7 +164,6 @@ jobs:
         with:
           images: ghcr.io/${{ matrix.image_name }}
           tags: |
-            type=raw,value=${{ matrix.version }}
             type=sha
             type=schedule
             type=ref,event=branch
@@ -182,7 +172,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,format=long,priority=1001
+            type=raw,value=${{ matrix.version }},priority=1001,enable=${{ matrix.version != '' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -199,8 +189,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2.1.0
         with:
-          tag_name: ${{ matrix.image_name }}-${{ matrix.version }}
+          tag_name: ${{ matrix.image_name }}-${{ docker-meta.outputs.version }}
           body: |
-            ${{ matrix.description }}
-
             Source commit: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
