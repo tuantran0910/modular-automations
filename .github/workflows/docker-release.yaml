@@ -173,15 +173,16 @@ jobs:
         with:
           images: ghcr.io/${{ matrix.image_name }}
           tags: |
-            type=sha,format=long,priority=1001,prefix=sha-,enable=true
-            type=schedule,pattern=nightly,enable=true,priority=1000
-            type=semver,pattern={{version}},value=,enable=true,priority=900
-            type=semver,pattern={{major}}.{{minor}},value=,enable=true,priority=900
-            type=semver,pattern={{major}},value=,enable=true,priority=900
-            type=ref,event=branch,enable=true,priority=600
-            type=ref,event=pr,prefix=pr-,enable=true,priority=600
-            type=raw,value=latest,enable={{is_default_branch}},priority=200
-            type=sha,prefix=sha-,format=short,enable=true,priority=100
+            type=sha
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=long,priority=1001
+            type=raw,value=${{ matrix.version }},priority=1002
 
       - name: Build and push
         uses: docker/build-push-action@v6
