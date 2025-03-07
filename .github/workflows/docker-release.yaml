@@ -7,6 +7,11 @@ on:
         default: "self-hosted"
         required: false
         type: string
+      warp_build_profile:
+        description: WarpBuild profile to use
+        default: ""
+        required: false
+        type: string
       platforms:
         description: The platforms to build the Docker image for
         default: "linux/amd64"
@@ -29,11 +34,6 @@ on:
         type: string
       force_build:
         description: Force build even if no Dockerfile changes detected
-        default: false
-        required: false
-        type: boolean
-      warp_build:
-        description: Use WarpBuild for building
         default: false
         required: false
         type: boolean
@@ -181,14 +181,14 @@ jobs:
           password: ${{ github.token }}
 
       - name: Configure WarpBuild Docker Builders
-        if: ${{ inputs.warp_build == true }}
+        if: ${{ inputs.warp_build_profile == "" }}
         uses: Warpbuilds/docker-configure@v1
         with:
           api-key: ${{ env.WARPBUILD_API_KEY }}
           profile-name: "warp-15x"
 
       - name: Set up Docker Buildx
-        if: ${{ inputs.warp_build != true }}
+        if: ${{ inputs.warp_build_profile != "" }}
         uses: docker/setup-buildx-action@v3
         with:
           driver: ${{ env.BUILDX_DRIVER || '' }}
