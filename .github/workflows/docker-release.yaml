@@ -195,6 +195,10 @@ jobs:
 
       - name: Build and push
         uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: ${{ inputs.warp_build_profile == '' }}
+          DOCKER_BUILD_SUMMARY: ${{ inputs.warp_build_profile == '' }}
+          DOCKER_BUILD_CHECKS_ANNOTATIONS: ${{ inputs.warp_build_profile == '' }}
         with:
           push: ${{ github.event_name != 'pull_request' }}
           context: "{{defaultContext}}:${{ matrix.context_dir }}"
