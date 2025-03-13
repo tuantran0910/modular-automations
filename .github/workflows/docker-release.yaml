@@ -150,6 +150,11 @@ jobs:
         image_name: ${{ fromJson(needs.setup.outputs.image_names) }}
         version: ${{ fromJson(needs.setup.outputs.versions) }}
     steps:
+      - name: Install packages
+        uses: ConorMacBride/install-package@v1
+        with:
+          apt: uuidgen
+
       - name: Setup GitHub environment
         id: setup-github-env
         run: |
