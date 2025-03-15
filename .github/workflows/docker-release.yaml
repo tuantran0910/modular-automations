@@ -70,7 +70,7 @@ jobs:
           # Determine if there are changed version files
           changed_version_files=()
           if [ -f "$HOME/files.json" ]; then
-            changed_version_files=($(jq -r '.all[] | select(endswith("/version.txt"))' "$HOME/files.json"))
+            changed_version_files=($(jq -r '.[] | select(endswith("/version.txt"))' "$HOME/files.json"))
           fi
 
           if [[ "${#changed_version_files[@]}" -gt "0" || "${{ inputs.force_build }}" == "true" ]]; then
