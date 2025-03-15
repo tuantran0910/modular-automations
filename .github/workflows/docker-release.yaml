@@ -54,10 +54,9 @@ jobs:
 
       - name: Get all changed version files
         id: changed-files
-        uses: tj-actions/changed-files@v45
+        uses: lots0logs/gh-action-get-changed-files@2.2.2
         with:
-          files: |
-            **/version.txt
+          token: ${{ github.token }}
 
       - name: Get App metadata
         id: app-meta
@@ -68,10 +67,16 @@ jobs:
           declare -a image_names
           declare -a versions
 
-          if [[ "${{ steps.changed-files.outputs.all_changed_files_count }}" -gt "0" || "${{ inputs.force_build }}" == "true" ]]; then
-            if [[ "${{ steps.changed-files.outputs.all_changed_files_count }}" -gt "0" ]]; then
+          # Determine if there are changed version files
+          changed_version_files=()
+          if [ -f "$HOME/files.json" ]; then
+            changed_version_files=($(jq -r '.all[] | select(endswith("/version.txt"))' "$HOME/files.json"))
+          fi
+
+          if [[ "${#changed_version_files[@]}" -gt "0" || "${{ inputs.force_build }}" == "true" ]]; then
+            if [[ "${#changed_version_files[@]}" -gt "0" ]]; then
               # Process changed version files
-              while IFS= read -r changed_file; do
+              for changed_file in "${changed_version_files[@]}"; do
                 if [[ -n "${changed_file}" ]]; then
                   context_dir=$(dirname $changed_file)
                   dockerfile_path="Dockerfile"  # Assuming Dockerfile is in the same directory
@@ -101,7 +106,7 @@ jobs:
                     versions+=("$version")
                   fi
                 fi
-              done <<< "${{ steps.changed-files.outputs.all_changed_files }}"
+              done
             else
               # Force build with input parameters
               context_dirs+=("${{ inputs.context_dir }}")
