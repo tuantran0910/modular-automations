@@ -26,7 +26,6 @@ on:
 jobs:
   release:
     runs-on: ${{ inputs.runs_on }}
-    environment: pypi
     permissions:
       id-token: write
       contents: write
