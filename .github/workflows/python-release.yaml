@@ -61,7 +61,7 @@ jobs:
       - name: Publish package to registry
         if: ${{ inputs.publish == true }}
         working-directory: ${{ inputs.relative_dir }}
-        run: uv publish --trusted-publishing always
+        run: uv publish
         # env:
         #   UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
 
