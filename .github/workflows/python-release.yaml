@@ -73,10 +73,7 @@ jobs:
       - name: Publish package to registry
         if: ${{ inputs.publish == true }}
         working-directory: ${{ inputs.relative_dir }}
-        run: uv publish
-        env:
-          UV_PUBLISH_USERNAME: __token__
-          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish --username __token__ --password ${{ secrets.PYPI_TOKEN }}
 
       - name: Make GitHub release
         uses: softprops/action-gh-release@v2.1.0
