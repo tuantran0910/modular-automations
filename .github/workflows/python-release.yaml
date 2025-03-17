@@ -43,7 +43,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
-          version: "0.5.12"
+          version: "0.6.6"
 
       - name: Calendar Versioning (PEP 440 Compatible)
         id: calver
@@ -73,7 +73,9 @@ jobs:
       - name: Publish package to registry
         if: ${{ inputs.publish == true }}
         working-directory: ${{ inputs.relative_dir }}
-        run: uv publish --username __token__ --password ${{ secrets.PYPI_TOKEN }}
+        run: uv publish
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
 
       - name: Make GitHub release
         uses: softprops/action-gh-release@v2.1.0
